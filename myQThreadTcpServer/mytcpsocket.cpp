@@ -1,6 +1,6 @@
 ﻿#include "mytcpsocket.h"
 
-myTcpSocket::myTcpSocket(qintptr socketDescriptor, QObject *parent) :
+myTcpSocket::myTcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数在主线程执行，lambda在子线程
     QTcpSocket(parent),socketID(socketDescriptor)
 {
     this->setSocketDescriptor(socketDescriptor);
@@ -8,17 +8,22 @@ myTcpSocket::myTcpSocket(qintptr socketDescriptor, QObject *parent) :
     connect(this,&myTcpSocket::readyRead,this,&myTcpSocket::thisReadData); //连接到收到数据的处理函数
     connect(this,&myTcpSocket::readyRead, //转换收到的信息，发送信号
             [this](){
-                qDebug() <<"myTcpSocket::myTcpSocket lambda readData thread is:" << QThread::currentThreadId();
+                qDebug() << socketID << " myTcpSocket::myTcpSocket lambda readData thread is:" << QThread::currentThreadId();
                 emit readData(socketID,this->peerAddress().toString(),this->peerPort() ,this->readAll());//发送用户发过来的数据
             });
-    connect(this,&myTcpSocket::disconnected, //断开连接的信号转换
+    dis = connect(this,&myTcpSocket::disconnected, //断开连接的信号转换
             [this](){
-                qDebug() <<"myTcpSocket::myTcpSocket lambda sockDisConnect thread is:" << QThread::currentThreadId();
-                emit sockDisConnect(socketID,this->peerAddress().toString(),this->peerPort());//发送断开连接的用户信息
+                qDebug() << socketID <<"myTcpSocket::myTcpSocket lambda sockDisConnect thread is:" << QThread::currentThreadId();
+                emit sockDisConnect(socketID,this->peerAddress().toString(),this->peerPort(),QThread::currentThread());//发送断开连接的用户信息
             });
 
     qDebug() << this->socketDescriptor() << " " << this->peerAddress().toString()
                 << " " << this->peerPort() << "myTcpSocket::myTcpSocket thread is " <<QThread::currentThreadId();
+}
+
+myTcpSocket::~myTcpSocket()
+{
+    qDebug() << QString("~myTcpSocket() at %1").arg(socketID) ;
 }
 
 void myTcpSocket::thisReadData()//收到数据的处理函数
@@ -34,5 +39,20 @@ void myTcpSocket::sentData(const QByteArray &data, const int id)
     {
         qDebug() << "myTcpSocket::sentData" << QThread::currentThreadId();
         write(data);
+    }
+}
+
+void myTcpSocket::disConTcp(int i)
+{
+    if (i == socketID)
+    {
+        this->disconnectFromHost();
+    }
+    else if (i == -1) //-1为全部断开
+    {
+        disconnect(dis); //先断开连接的信号槽，防止二次析构
+        this->disconnectFromHost();
+        qDebug() <<QString("disconnectFromHost() at %1").arg(this->socketID);
+        this->~myTcpSocket();//析构此函数
     }
 }
